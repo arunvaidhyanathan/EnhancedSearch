@@ -1,0 +1,8 @@
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/EnhancedSearchApplication.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/dto/SearchCriteria.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/service/IndexManager.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/config/SearchConfig.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/service/SearchService.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/dto/SearchRequest.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/dto/SearchCondition.java
+/Users/arunvaidhyanathan/Developer/EnhancedSearch/enhancedsearch/src/main/java/com/example/enhancedsearch/controller/SearchController.java
