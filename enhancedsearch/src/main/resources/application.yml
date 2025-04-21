@@ -3,10 +3,9 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres
-    username: postgres  
-    # IMPORTANT: Avoid hardcoding passwords in production. Use environment variables or secrets management.
-    password: password
+    url: jdbc:postgresql://db.nrhsoabqeskybrznxfyi.supabase.co:5432/postgres
+    username: postgres
+    password: Sreeja1608!@
     driver-class-name: org.postgresql.Driver
   jpa:
     # Although we're primarily using JDBC, these might be useful if JPA is used elsewhere.
