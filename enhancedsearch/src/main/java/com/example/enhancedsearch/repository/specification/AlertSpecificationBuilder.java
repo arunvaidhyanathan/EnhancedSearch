@@ -33,7 +33,8 @@ public class AlertSpecificationBuilder {
             Map.entry("Assigned To", "assignedTo"),
             Map.entry("Step", "step"),
             Map.entry("Alert ID", "alertBusinessId"), // Adjust if different
-            Map.entry("Match Accuracy %", "matchAccuracy")
+            Map.entry("Match Accuracy %", "matchAccuracy"),
+            Map.entry("Business Unit", "businessUnit")
             // Add other direct alert_mst fields here
     );
 
@@ -84,6 +85,8 @@ public class AlertSpecificationBuilder {
         return (root, query, cb) -> {
             try {
                 switch (filter.getCollectionName().toLowerCase()) {
+                    case "user_bu_map":
+                        return buildUserBuMapPredicate(cb, query, root, filter);
                     case "alert_mst":
                         return buildAlertMstPredicate(cb, root, filter);
                     case "alert_det":
@@ -111,6 +114,23 @@ public class AlertSpecificationBuilder {
     // --- Predicate Builders for Specific Collections ---
 
     private static Predicate buildAlertMstPredicate(CriteriaBuilder cb, Root<AlertMst> root, FilterCriteria filter) {
+        String entityFieldName = ALERT_MST_FIELD_MAP.get(filter.getFieldName());
+        if (entityFieldName == null) {
+            log.warn("No mapping found for alert_mst field: {}", filter.getFieldName());
+            return cb.conjunction(); // Skip filter if field mapping is missing
+        }
+        Path<?> path = root.get(entityFieldName);
+        return buildPredicate(cb, path, filter);
+    }
+
+    private static Predicate buildUserBuMapPredicate(CriteriaBuilder cb, CriteriaQuery<?> query, Root<AlertMst> root, FilterCriteria filter) {
+         Subquery<String> subquery = query.subquery(String.class);
+        Root<UserBuMap> userBuMapRoot = subquery.from(UserBuMap.class);
+        subquery.select(userBuMapRoot.get("buIdentifier")); // Select buIdentifier from UserBuMap
+
+         // Join condition: alert_mst.business_unit = user_bu_map.bu_identifier
+        Predicate joinPredicate = cb.equal(root.get("businessUnit"), userBuMapRoot.get("buIdentifier"));
+        subquery.where(joinPredicate);
         String entityFieldName = ALERT_MST_FIELD_MAP.get(filter.getFieldName());
         if (entityFieldName == null) {
             log.warn("No mapping found for alert_mst field: {}", filter.getFieldName());

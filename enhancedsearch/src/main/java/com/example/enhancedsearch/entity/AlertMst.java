@@ -15,6 +15,9 @@ import java.util.Set;
 @Setter // Add Setter
 public class AlertMst {
 
+    @Column(name = "BUSINESS_UNIT")
+    private String businessUnit;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -42,6 +45,11 @@ public class AlertMst {
 
     @Column(name = "MATCH_ACCURACY") // Maps to "Match Accuracy %"
     private BigDecimal matchAccuracy; // Use BigDecimal for percentages/precision
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "BUSINESS_UNIT", referencedColumnName = "buIdentifier", insertable = false, updatable = false)
+    private UserBuMap userBuMap;
+
 
     @OneToMany(mappedBy = "alertMst", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<AlertDet> alertDets = new HashSet<>(); // Corrected variable name
