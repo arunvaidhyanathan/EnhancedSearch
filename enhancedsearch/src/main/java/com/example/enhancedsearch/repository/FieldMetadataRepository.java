@@ -4,13 +4,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import com.example.enhancedsearch.model.AppFieldMaster;
+import com.example.enhancedsearch.service.AlertSearchServiceCacheImpl;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+
+
 @Repository
 public class FieldMetadataRepository {
     private final JdbcTemplate jdbcTemplate;
+
+    private AlertSearchServiceCacheImpl alertSearchServiceCacheImpl;
+
 
     @Autowired
     public FieldMetadataRepository(JdbcTemplate jdbcTemplate) {
@@ -22,12 +30,12 @@ public class FieldMetadataRepository {
         return jdbcTemplate.queryForList(sql);
     }
 
-    public Map<String, Map<String, Object>> getFieldMetadataMap() {
-        List<Map<String, Object>> metaList = fetchFieldMetadata();
-        Map<String, Map<String, Object>> result = new HashMap<>();
-        for (Map<String, Object> row : metaList) {
+    public Map<String, AppFieldMaster> getFieldMetadataMap() {
+        List<Map<String, AppFieldMaster>> metaList = (List<Map<String, AppFieldMaster>>) alertSearchServiceCacheImpl.loadAppFieldMasterData();
+        Map<String, AppFieldMaster> result = new HashMap<>();
+        for (Map<String, AppFieldMaster> row : metaList) {
             String key = row.get("table_name") + "." + row.get("column_name");
-            result.put(key, row);
+            result.put(key, row.get("column_name"));
         }
         return result;
     }

@@ -3,9 +3,9 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres
+    url: jdbc:postgresql://db.nrhsoabqeskybrznxfyi.supabase.co:5432/postgres
     username: postgres
-    password: password
+    password: Sreeja1608!@
     driver-class-name: org.postgresql.Driver
   jpa:
     # Although we're primarily using JDBC, these might be useful if JPA is used elsewhere.

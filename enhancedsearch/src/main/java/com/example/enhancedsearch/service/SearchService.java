@@ -2,22 +2,34 @@ package com.example.enhancedsearch.service;
 
 import com.example.enhancedsearch.dto.SearchCriteria;
 import com.example.enhancedsearch.dto.SearchRequest;
+import com.example.enhancedsearch.model.AppFieldMaster;
+import com.example.enhancedsearch.model.DynamicList;
+import com.example.enhancedsearch.model.GridColumn;
+import com.example.enhancedsearch.model.GridFields;
+import com.example.enhancedsearch.model.GridMetaData;
+import com.example.enhancedsearch.model.Response;
+import com.example.enhancedsearch.model.SolSearchCriteria;
 import com.example.enhancedsearch.dto.DataSearchRequest;
 import com.example.enhancedsearch.dto.SearchFilter;
+import com.example.enhancedsearch.repository.AlertSearchRepositoryimpl;
 import com.example.enhancedsearch.repository.FieldMetadataRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.expression.spel.ast.Operator;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
+import java.io.IOException;
+import java.text.ParseException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -33,122 +45,94 @@ public class SearchService {
     private final JdbcTemplate jdbcTemplate;
     @Autowired
     private FieldMetadataRepository fieldMetadataRepository;
+    
+    private AlertSearchRepositoryimpl alertSearchRepositoryImpl;
 
     @Autowired
     public SearchService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<Map<String, Object>> performSearch(SearchRequest request) {
-        if (request == null || CollectionUtils.isEmpty(request.criteria()) || request.tableName() == null || request.tableName().isBlank()) {
-            log.warn("Invalid search request received: Empty criteria or missing table name.");
-            return Collections.emptyList();
-        }
-
-        // Sanitize table name
-        String tableName = sanitizeIdentifier(request.tableName());
-        if (tableName == null) {
-             log.error("Invalid table name provided: {}", request.tableName());
-             // Or throw specific exception
-             return Collections.emptyList();
-        }
-        // Use 'cads' schema as specified
-        String qualifiedTableName = "cads." + tableName;
-
-        StringBuilder queryBuilder = new StringBuilder("SELECT * FROM ");
-        queryBuilder.append(qualifiedTableName);
-        queryBuilder.append(" WHERE ");
-
-        List<String> conditions = new ArrayList<>();
-        List<Object> params = new ArrayList<>();
-
-        for (SearchCriteria criteria : request.criteria()) {
-            String columnName = sanitizeIdentifier(criteria.columnName());
-            if (columnName == null) {
-                log.warn("Invalid column name '{}' in criteria, skipping.", criteria.columnName());
-                continue; // Skip this criterion
-            }
-
-            try {
-                String conditionClause = buildConditionClause(criteria, columnName);
-                if (conditionClause != null) {
-                    conditions.add(conditionClause);
-                    addParameters(criteria, params);
-                }
-            } catch (IllegalArgumentException e) {
-                log.warn("Skipping criteria due to invalid argument: {} - {}", criteria, e.getMessage());
-                // Potentially collect errors and return a bad request status later
-            }
-        }
-
-        if (conditions.isEmpty()) {
-            log.warn("No valid search conditions could be built from the request.");
-            return Collections.emptyList(); // Or maybe return all results? Depends on requirements.
-        }
-
-        queryBuilder.append(conditions.stream().collect(Collectors.joining(" AND ")));
-
-        // Add partition filtering if applicable (as mentioned in Prod.MD overview)
-        // This is a simple example assuming a 'partition_date' column exists and is relevant.
-        // More complex partitioning logic might be needed.
-        // Example: Filter partitions based on date ranges in the criteria
-        addPartitionFilter(request.criteria(), queryBuilder, params);
-
-        // Add ORDER BY, LIMIT, OFFSET for pagination/sorting if needed
-        // queryBuilder.append(" ORDER BY some_column LIMIT ? OFFSET ?");
-        // params.add(request.size());
-        // params.add(request.page() * request.size());
-
-        String finalQuery = queryBuilder.toString();
-        log.info("Executing search query: {}", finalQuery);
-        log.debug("With parameters: {}", params);
-
+    public DynamicList search(SolSearchCriteria solrSearchCriteria) throws IOException ,ParseException{
+        Response response = new Response();
+        DynamicList data = new DynamicList();
+        GridMetaData metaData = new GridMetaData();
+        List<GridColumn> columns;
+        List<GridFields> fields;
+        LinkedHashSet<String> userSelectedFields = new LinkedHashSet<>();
+        LinkedHashSet<String> userSelectedAlertDetColumns = new LinkedHashSet<>();
+        buildDBQuery(solrSearchCriteria, userSelectedFields, userSelectedAlertDetColumns);
+        
         try {
-            return jdbcTemplate.queryForList(finalQuery, params.toArray());
-        } catch (DataAccessException e) {
-            log.error("Error executing search query [{}]: {}", finalQuery, e.getMessage(), e);
-            // Re-throw a custom exception or return an empty list/error indicator
-            return Collections.emptyList();
+            LinkedHashSet<String> totalFields = new LinkedHashSet<>();
+            columns = getColumnList(solrSearchCriteria, userSelectedFields,totalFields, userSelectedAlertDetColumns);
+            if(!columns.isEmpty()) {
+                fields = GridColumn.getGridFields(columns);
+            }
+            StringBuilder selectedField = new StringBuilder();
+            totalFields.forEach(field -> {
+                if(selectedField.length()>0) {
+                    selectedField.append(",");
+                }
+                if(field.equalsIgnoreCase("ID")) {
+                    selectedField.append("ID:ALERT_ID");
+                } else if(field.equalsIgnoreCase("PP_MESSAGE")) {
+                    selectedField.append("PP_MESSAGE:PP_MESSAGE");
+                } else {
+                    selectedField.append(field);
+                }
+            });
+            selectedField.append("*");
+        } catch (Exception e) {
+            log.error("Error during search", e);
         }
+        return data;
     }
 
-    public List<Map<String, Object>> performDataSearch(DataSearchRequest request) {
-        // Fetch metadata map for quick lookup
-        Map<String, Map<String, Object>> metadataMap = fieldMetadataRepository.getFieldMetadataMap();
-        List<Map<String, Object>> results = new ArrayList<>();
-        if (request == null || request.getSearchFilters() == null) return results;
+    private List<GridColumn> getColumnList(SolSearchCriteria solrSearchCriteria,
+            LinkedHashSet<String> userSelectedFields,
+            LinkedHashSet<String> totalFields, LinkedHashSet<String> alertDetColumns) {
+                List<GridColumn> columns;
 
-        for (Map<String, List<SearchFilter>> filterGroup : request.getSearchFilters()) {
-            for (Map.Entry<String, List<SearchFilter>> entry : filterGroup.entrySet()) {
-                String groupName = entry.getKey();
-                List<SearchFilter> filters = entry.getValue();
-                if (filters == null || filters.isEmpty()) continue;
-                // Assume all filters in group are for the same collectionName
-                String collectionName = filters.get(0).getCollectionName();
-                String tableName = getTableName(collectionName);
-                StringBuilder sql = new StringBuilder("SELECT * FROM cads." + tableName + " WHERE ");
-                List<Object> params = new ArrayList<>();
-                StringBuilder where = new StringBuilder();
-                for (int i = 0; i < filters.size(); i++) {
-                    SearchFilter f = filters.get(i);
-                    Map<String, Object> meta = metadataMap.getOrDefault(tableName + "." + f.getFieldName(), null);
-                    String op = getSqlOperator(f.getOperation(), f.getFieldType());
-                    String clause = buildClause(f, meta, op);
-                    if (clause != null) {
-                        if (i > 0) where.append(" ").append(f.getFilterCondition()).append(" ");
-                        where.append(clause);
-                        addSqlParameters(params, f, op);
+                if (solrSearchCriteria.getColumns() != null && !solrSearchCriteria.getColumns().isEmpty()) {
+                    solrSearchCriteria.getColumns().forEach(f -> totalFields.add(f.getFieldName()));
+                
+                for (String field : userSelectedFields) {
+                    if (!totalFields.contains(field)) {
+                        totalFields.add(field);
                     }
                 }
-                sql.append(where);
-                // Pagination
-                sql.append(" LIMIT ? OFFSET ?");
-                params.add(request.getLimit());
-                params.add(request.getStart());
-                results.addAll(jdbcTemplate.queryForList(sql.toString(), params.toArray()));
+                totalFields.addAll(alertDetColumns);
+                columns = getHeaderInfoForFilteredFields(totalFields);
+                totalFields.removeAll(alertDetColumns);
+            } else {
+                Map<String, AppFieldMaster> appFieldMasterMap = fieldMetadataRepository.getFieldMetadataMap();
+                totalFields.addAll(appFieldMasterMap.keySet());
+                columns = getHeaderInfo(totalFields);
             }
+            return columns;
+    }
+
+    private List<GridColumn> getHeaderInfoForFilteredFields(LinkedHashSet<String> totalFields) {
+        Map<String, AppFieldMaster> appFieldMasterMap = (Map<String, AppFieldMaster>) alertSearchRepositoryImpl.loadEnhancedSearchFieldMasterForFilteredFields();
+        List<GridColumn> gridColumnsList = new ArrayList<>();
+        int count = 0;
+        for (String element: totalFields) {
+            if (appFieldMasterMap.get(element) == null)
+                continue;
+            gridColumnsList.add(new GridColumn().mapGridColumnFields(appFieldMasterMap.get(element), ++count));
         }
-        return results;
+        return gridColumnsList;
+    }
+
+    private List<GridColumn> getHeaderInfo(LinkedHashSet<String> totalFields) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getHeaderInfo'");
+    }
+
+    private void buildDBQuery(SolSearchCriteria solrSearchCriteria, LinkedHashSet<String> userSelectedFields, LinkedHashSet<String> userSelectedAlertDetColumns) {
+        //Perform the database query
+    
     }
 
     private String getTableName(String collectionName) {
@@ -206,20 +190,20 @@ public class SearchService {
         }
     }
 
-    private String buildConditionClause(SearchCriteria criteria, String columnName) {
-        switch (criteria.condition()) {
+    private String buildConditionClause(Operator operator, String columnName) {
+        /*switch (operator) {
             case EQUALS:
-                return columnName + (criteria.isDate() ? " = ?::date" : " = ?");
+                return columnName + (operator.isDate() ? " = ?::date" : " = ?");
             case LIKE:
                 // Using standard LIKE. For pg_trgm similarity, you'd use % or similarity() function.
                  // Ensure value is wrapped with %
                 return columnName + " LIKE ?";
             case LESS_THAN_EQUALS:
-                return columnName + (criteria.isDate() ? " <= ?::date" : " <= ?");
+                return columnName + (operator.isDate() ? " <= ?::date" : " <= ?");
             case GREATER_THAN_EQUALS:
-                return columnName + (criteria.isDate() ? " >= ?::date" : " >= ?");
+                return columnName + (operator.isDate() ? " >= ?::date" : " >= ?");
             case BETWEEN:
-                if (criteria.isDate()) {
+                if (operator.isDate()) {
                     return columnName + " BETWEEN ?::date AND ?::date";
                 } else {
                     return columnName + " BETWEEN ? AND ?";
@@ -229,13 +213,13 @@ public class SearchService {
                 // Add ~* for case-insensitive if needed
                 return columnName + " ~ ?";
             default:
-                log.warn("Unsupported search condition: {}", criteria.condition());
+                log.warn("Unsupported search condition: {}", criteria.condition());*/
                 return null;
-        }
+        
     }
 
     private void addParameters(SearchCriteria criteria, List<Object> params) throws IllegalArgumentException {
-        try {
+        /*try {
             switch (criteria.condition()) {
                 case BETWEEN:
                     if (criteria.isDate()) {
@@ -268,7 +252,7 @@ public class SearchService {
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException("Invalid date format for column '" + criteria.columnName() +
                                                "'. Expected format: YYYY-MM-DD", e);
-        }
+        }*/
     }
 
     private LocalDate parseDate(String dateValue, String columnName) {

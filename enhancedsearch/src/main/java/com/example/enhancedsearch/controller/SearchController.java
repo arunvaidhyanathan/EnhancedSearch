@@ -1,11 +1,17 @@
 package com.example.enhancedsearch.controller;
 
 import com.example.enhancedsearch.dto.DataSearchRequest;
+import com.example.enhancedsearch.dto.FilterFieldMetadata;
+import com.example.enhancedsearch.dto.SearchRequest;
+import com.example.enhancedsearch.model.DynamicList;
+import com.example.enhancedsearch.model.SolSearchCriteria;
 import com.example.enhancedsearch.service.SearchService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,19 +33,14 @@ public class SearchController {
         this.searchService = searchService;
     }
 
-    @PostMapping(consumes = "application/json", produces = "application/json")
-    public ResponseEntity<List<Map<String, Object>>> search(@RequestBody DataSearchRequest request) {
-        log.info("Received /data search request: {}", request);
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<DynamicList> search(@RequestBody SolSearchCriteria solrSearchCriteria) {
+        log.info("Received /data search request: {}", solrSearchCriteria);
         try {
-            List<Map<String, Object>> results = searchService.performDataSearch(request);
-            return ResponseEntity.ok(results);
-        } catch (IllegalArgumentException e) {
-            log.warn("Bad search request: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Collections.singletonList(Map.of("error", "Invalid search criteria: " + e.getMessage())));
+            return ResponseEntity.ok(searchService.search(solrSearchCriteria));
         } catch (Exception e) {
-            log.error("An unexpected error occurred during search: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                 .body(Collections.singletonList(Map.of("error", "An internal server error occurred.")));
+            log.error("Error during search", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }
